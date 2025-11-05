@@ -43,7 +43,7 @@ export const createRenderer = (canvas: HTMLCanvasElement, engine: Matter.Engine)
 };
 
 export const createPiece = (x: number, y: number, type: PieceType, id: string): Piece => {
-  const isStriker = type === PieceType.STRIKER;
+  const isStriker = type === PieceType.STRIKER || type === PieceType.STRIKER_P1 || type === PieceType.STRIKER_P2;
   const radius = isStriker ? STRIKER_RADIUS : PIECE_RADIUS;
 
   let color: string;
@@ -59,6 +59,12 @@ export const createPiece = (x: number, y: number, type: PieceType, id: string): 
       break;
     case PieceType.STRIKER:
       color = PieceColor.STRIKER;
+      break;
+    case PieceType.STRIKER_P1:
+      color = PieceColor.STRIKER_P1;
+      break;
+    case PieceType.STRIKER_P2:
+      color = PieceColor.STRIKER_P2;
       break;
     default:
       color = '#FFFFFF';

@@ -4,14 +4,18 @@ export enum PieceType {
   WHITE = 'white',
   BLACK = 'black',
   QUEEN = 'queen',
-  STRIKER = 'striker'
+  STRIKER = 'striker',
+  STRIKER_P1 = 'striker_p1',
+  STRIKER_P2 = 'striker_p2'
 }
 
 export enum PieceColor {
   WHITE = '#FFFFFF',
   BLACK = '#000000',
   QUEEN = '#FF1744',
-  STRIKER = '#4CAF50'
+  STRIKER = '#4CAF50',
+  STRIKER_P1 = '#4CAF50',  // Green for Player 1
+  STRIKER_P2 = '#2196F3'   // Blue for Player 2/AI
 }
 
 export interface Piece {

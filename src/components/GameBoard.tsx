@@ -38,7 +38,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const engineRef = useRef<Matter.Engine | null>(null);
   const runnerRef = useRef<Matter.Runner | null>(null);
   const piecesRef = useRef<Piece[]>([]);
-  const strikerRef = useRef<Piece | null>(null);
+  const strikerP1Ref = useRef<Piece | null>(null);  // Green striker for Player 1
+  const strikerP2Ref = useRef<Piece | null>(null);  // Blue striker for Player 2/AI
 
   const [isDragging, setIsDragging] = useState(false);
   const [aimAngle, setAimAngle] = useState(-Math.PI / 2);
@@ -53,6 +54,9 @@ const GameBoard: React.FC<GameBoardProps> = ({
   // Determine whose turn and calculate striker position
   const isPlayer1Turn = currentTurn === PlayerTurn.PLAYER1;
   const strikerLineY = getStrikerLineY(isPlayer1Turn);
+
+  // Get current striker based on turn
+  const currentStrikerRef = isPlayer1Turn ? strikerP1Ref : strikerP2Ref;
 
   // Striker line area bounds - changes based on player
   const STRIKER_AREA_MIN_Y = isPlayer1Turn ? strikerLineY - 50 : strikerLineY - 10;
@@ -74,18 +78,29 @@ const GameBoard: React.FC<GameBoardProps> = ({
     const pieces = setupBoard();
     piecesRef.current = pieces;
 
-    // Create striker at Player 1's position initially
-    const striker = createPiece(
+    // Create BOTH strikers (one for each player)
+    const strikerP1 = createPiece(
       BOARD_SIZE / 2,
       STRIKER_LINE_Y_PLAYER1,
-      PieceType.STRIKER,
-      'striker'
+      PieceType.STRIKER_P1,
+      'striker_p1'
     );
-    strikerRef.current = striker;
+    strikerP1Ref.current = strikerP1;
+
+    const strikerP2 = createPiece(
+      BOARD_SIZE / 2,
+      STRIKER_LINE_Y_PLAYER2,
+      PieceType.STRIKER_P2,
+      'striker_p2'
+    );
+    strikerP2Ref.current = strikerP2;
+
+    // Hide Player 2 striker initially (Player 1 goes first)
+    strikerP2.body.collisionFilter = { ...strikerP2.body.collisionFilter, group: -1 };
 
     // Add all bodies to world
     const walls = createBoardBoundaries();
-    Matter.World.add(engine.world, [...walls, ...pieces.map(p => p.body), striker.body]);
+    Matter.World.add(engine.world, [...walls, ...pieces.map(p => p.body), strikerP1.body, strikerP2.body]);
 
     // Create runner
     const runner = Matter.Runner.create();
@@ -160,38 +175,62 @@ const GameBoard: React.FC<GameBoardProps> = ({
         }
       });
 
-      // Draw striker
-      if (strikerRef.current && !strikerRef.current.pocketed) {
-        const { x, y } = strikerRef.current.body.position;
+      // Draw only the CURRENT player's striker
+      if (currentStrikerRef.current && !currentStrikerRef.current.pocketed) {
+        const { x, y } = currentStrikerRef.current.body.position;
         ctx.beginPath();
         ctx.arc(x, y, 18, 0, Math.PI * 2);
-        ctx.fillStyle = strikerRef.current.body.render.fillStyle as string;
+        ctx.fillStyle = currentStrikerRef.current.body.render.fillStyle as string;
         ctx.fill();
-        ctx.strokeStyle = strikerRef.current.body.render.strokeStyle as string;
+        ctx.strokeStyle = '#333333';
         ctx.lineWidth = 2;
         ctx.stroke();
       }
 
       // Draw aim line when player can shoot
-      if (canShoot && !isAnimating && !isAITurn && strikerRef.current) {
-        const striker = strikerRef.current.body.position;
+      if (canShoot && !isAnimating && !isAITurn && currentStrikerRef.current) {
+        const striker = currentStrikerRef.current.body.position;
 
         // Show aim line (either during drag or default hint)
         if (isDragging || power > 0) {
-          const aimLength = Math.min(power * 2, 200);
+          // INTERACTIVE AIM ARROW - rotates and extends based on aim
+          const baseLength = 50;
+          const maxLength = 200;
+          const aimLength = baseLength + (power / 100) * (maxLength - baseLength);
+
           const endX = striker.x + Math.cos(aimAngle) * aimLength;
           const endY = striker.y + Math.sin(aimAngle) * aimLength;
 
+          // Draw main aim line
           ctx.beginPath();
           ctx.moveTo(striker.x, striker.y);
           ctx.lineTo(endX, endY);
-          ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
-          ctx.lineWidth = 3;
+          ctx.strokeStyle = `rgba(255, 215, 0, ${0.6 + power / 250})`;
+          ctx.lineWidth = 4;
           ctx.stroke();
 
-          // Draw power indicator
+          // Draw arrow head pointing in aim direction
+          const arrowSize = 15;
+          const arrowAngle = Math.PI / 6; // 30 degrees
+
           ctx.beginPath();
-          ctx.arc(striker.x, striker.y, 25 + power / 5, 0, Math.PI * 2);
+          ctx.moveTo(endX, endY);
+          ctx.lineTo(
+            endX - arrowSize * Math.cos(aimAngle - arrowAngle),
+            endY - arrowSize * Math.sin(aimAngle - arrowAngle)
+          );
+          ctx.moveTo(endX, endY);
+          ctx.lineTo(
+            endX - arrowSize * Math.cos(aimAngle + arrowAngle),
+            endY - arrowSize * Math.sin(aimAngle + arrowAngle)
+          );
+          ctx.strokeStyle = `rgba(255, 215, 0, ${0.7 + power / 200})`;
+          ctx.lineWidth = 4;
+          ctx.stroke();
+
+          // Draw power indicator circle
+          ctx.beginPath();
+          ctx.arc(striker.x, striker.y, 25 + power / 4, 0, Math.PI * 2);
           ctx.strokeStyle = `rgba(255, 215, 0, ${0.3 + power / 200})`;
           ctx.lineWidth = 2;
           ctx.stroke();
@@ -257,8 +296,19 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
   // Update striker position when turn changes
   useEffect(() => {
-    if (strikerRef.current && canShoot && !isAnimating) {
-      resetStrikerPosition(strikerRef.current.body, isPlayer1Turn);
+    if (strikerP1Ref.current && strikerP2Ref.current && canShoot && !isAnimating) {
+      // Activate current player's striker, deactivate the other
+      if (isPlayer1Turn) {
+        // Player 1's turn
+        strikerP1Ref.current.body.collisionFilter = { ...strikerP1Ref.current.body.collisionFilter, group: 0 };
+        strikerP2Ref.current.body.collisionFilter = { ...strikerP2Ref.current.body.collisionFilter, group: -1 };
+        resetStrikerPosition(strikerP1Ref.current.body, true);
+      } else {
+        // Player 2's turn
+        strikerP2Ref.current.body.collisionFilter = { ...strikerP2Ref.current.body.collisionFilter, group: 0 };
+        strikerP1Ref.current.body.collisionFilter = { ...strikerP1Ref.current.body.collisionFilter, group: -1 };
+        resetStrikerPosition(strikerP2Ref.current.body, false);
+      }
 
       // Reset aim angle based on player direction
       setAimAngle(isPlayer1Turn ? -Math.PI / 2 : Math.PI / 2);
@@ -302,16 +352,17 @@ const GameBoard: React.FC<GameBoardProps> = ({
         }
       });
 
-      // Check striker
-      if (strikerRef.current && !strikerRef.current.pocketed && checkPocketed(strikerRef.current.body)) {
-        strikerRef.current.pocketed = true;
+      // Check current striker
+      const currentStriker = currentStrikerRef.current;
+      if (currentStriker && !currentStriker.pocketed && checkPocketed(currentStriker.body)) {
+        currentStriker.pocketed = true;
         onScoreUpdate(currentTurn, -10, PieceType.STRIKER);
-        resetStrikerPosition(strikerRef.current.body, isPlayer1Turn);
-        strikerRef.current.pocketed = false;
+        resetStrikerPosition(currentStriker.body, isPlayer1Turn);
+        currentStriker.pocketed = false;
       }
 
-      // Check if all pieces are stationary
-      if (isAnimating && arePiecesStationary([...piecesRef.current, strikerRef.current!])) {
+      // Check if all pieces are stationary (including current striker)
+      if (isAnimating && currentStrikerRef.current && arePiecesStationary([...piecesRef.current, currentStrikerRef.current])) {
         setIsAnimating(false);
         setCanShoot(true);
 
@@ -331,7 +382,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
   // AI turn handler
   useEffect(() => {
-    if (isAITurn && canShoot && !isAnimating && strikerRef.current) {
+    if (isAITurn && canShoot && !isAnimating && strikerP2Ref.current) {
       setTimeout(() => {
         const targetColor = gameConfig?.player2.color === PieceType.WHITE
           ? PieceType.WHITE
@@ -339,8 +390,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         const aiMove = calculateAIMove(piecesRef.current, targetColor, AIDifficulty.MEDIUM);
 
-        // Position striker at Player 2's line (top)
-        Matter.Body.setPosition(strikerRef.current!.body, {
+        // Position Player 2's striker (blue) at top
+        Matter.Body.setPosition(strikerP2Ref.current!.body, {
           x: aiMove.strikerX,
           y: STRIKER_LINE_Y_PLAYER2
         });
@@ -350,7 +401,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           // Mark that a shot was taken this turn
           shotTakenThisTurnRef.current = true;
           piecePocketedThisTurnRef.current = false;
-          applyStrikerForce(strikerRef.current!.body, aiMove.angle, aiMove.power);
+          applyStrikerForce(strikerP2Ref.current!.body, aiMove.angle, aiMove.power);
           setIsAnimating(true);
           setCanShoot(false);
         }, 500);
@@ -360,14 +411,14 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
   // Mouse/Touch handlers for striker control
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (!canShoot || isAnimating || isAITurn || !strikerRef.current) return;
+    if (!canShoot || isAnimating || isAITurn || !currentStrikerRef.current) return;
 
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
 
     const clickX = e.clientX - rect.left;
     const clickY = e.clientY - rect.top;
-    const striker = strikerRef.current.body.position;
+    const striker = currentStrikerRef.current.body.position;
 
     // Check if clicking in striker line area (changes based on player)
     const isInStrikerArea = (isPlayer1Turn && clickY >= STRIKER_AREA_MIN_Y) ||
@@ -376,10 +427,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
     if (isInStrikerArea) {
       // Position striker on striker line at click X position
       const clampedX = Math.max(50, Math.min(BOARD_SIZE - 50, clickX));
-      Matter.Body.setPosition(strikerRef.current.body, { x: clampedX, y: strikerLineY });
+      Matter.Body.setPosition(currentStrikerRef.current.body, { x: clampedX, y: strikerLineY });
       // Reset velocity to prevent drift
-      Matter.Body.setVelocity(strikerRef.current.body, { x: 0, y: 0 });
-      Matter.Body.setAngularVelocity(strikerRef.current.body, 0);
+      Matter.Body.setVelocity(currentStrikerRef.current.body, { x: 0, y: 0 });
+      Matter.Body.setAngularVelocity(currentStrikerRef.current.body, 0);
     } else {
       // Start aiming from current striker position
       setIsDragging(true);
@@ -395,10 +446,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
       const newPower = Math.min(Math.max(distance / 2, 20), 100);
       setPower(newPower);
     }
-  }, [canShoot, isAnimating, isAITurn, isPlayer1Turn, strikerLineY, STRIKER_AREA_MIN_Y, STRIKER_AREA_MAX_Y]);
+  }, [canShoot, isAnimating, isAITurn, isPlayer1Turn, strikerLineY, STRIKER_AREA_MIN_Y, STRIKER_AREA_MAX_Y, currentStrikerRef]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDragging || !strikerRef.current) return;
+    if (!isDragging || !currentStrikerRef.current) return;
 
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -406,7 +457,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    const striker = strikerRef.current.body.position;
+    const striker = currentStrikerRef.current.body.position;
 
     // Calculate aim angle
     const dx = mouseX - striker.x;
@@ -418,10 +469,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
     const distance = Math.sqrt(dx * dx + dy * dy);
     const newPower = Math.min(Math.max(distance / 2, 20), 100);
     setPower(newPower);
-  }, [isDragging]);
+  }, [isDragging, currentStrikerRef]);
 
   const handlePointerUp = useCallback(() => {
-    if (!isDragging || !canShoot || !strikerRef.current) return;
+    if (!isDragging || !canShoot || !currentStrikerRef.current) return;
 
     setIsDragging(false);
 
@@ -429,12 +480,12 @@ const GameBoard: React.FC<GameBoardProps> = ({
       // Mark that a shot was taken this turn
       shotTakenThisTurnRef.current = true;
       piecePocketedThisTurnRef.current = false;
-      applyStrikerForce(strikerRef.current.body, aimAngle, power);
+      applyStrikerForce(currentStrikerRef.current.body, aimAngle, power);
       setIsAnimating(true);
       setCanShoot(false);
       setPower(0);
     }
-  }, [isDragging, canShoot, power, aimAngle]);
+  }, [isDragging, canShoot, power, aimAngle, currentStrikerRef]);
 
   return (
     <div className="game-board-container">
