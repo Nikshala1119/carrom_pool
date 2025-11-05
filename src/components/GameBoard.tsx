@@ -110,13 +110,23 @@ const GameBoard: React.FC<GameBoardProps> = ({
         ctx.fill();
       });
 
+      // Draw striker line area (clickable region for positioning)
+      if (canShoot && !isAnimating && !isAITurn) {
+        ctx.fillStyle = 'rgba(76, 175, 80, 0.1)';
+        ctx.fillRect(0, 0, BOARD_SIZE, 150);
+
+        ctx.strokeStyle = 'rgba(76, 175, 80, 0.3)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(0, 0, BOARD_SIZE, 150);
+      }
+
       // Draw striker line
       ctx.beginPath();
       ctx.moveTo(50, STRIKER_LINE_Y);
       ctx.lineTo(BOARD_SIZE - 50, STRIKER_LINE_Y);
-      ctx.strokeStyle = 'rgba(139, 69, 19, 0.3)';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([5, 5]);
+      ctx.strokeStyle = 'rgba(139, 69, 19, 0.5)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 5]);
       ctx.stroke();
       ctx.setLineDash([]);
 
@@ -292,18 +302,35 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
   // Mouse/Touch handlers for striker control
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (!canShoot || isAnimating || isAITurn) return;
+    if (!canShoot || isAnimating || isAITurn || !strikerRef.current) return;
 
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
 
-    const x = e.clientX - rect.left;
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+    const striker = strikerRef.current.body.position;
 
-    setIsDragging(true);
-    setStrikerPosition({ x, y: STRIKER_LINE_Y });
+    // Allow repositioning if clicking on striker line area (y < 150)
+    if (clickY < 150) {
+      // Position striker on striker line at click X position
+      const clampedX = Math.max(50, Math.min(BOARD_SIZE - 50, clickX));
+      Matter.Body.setPosition(strikerRef.current.body, { x: clampedX, y: STRIKER_LINE_Y });
+      setStrikerPosition({ x: clampedX, y: STRIKER_LINE_Y });
+    } else {
+      // Start aiming from current striker position
+      setIsDragging(true);
 
-    if (strikerRef.current) {
-      Matter.Body.setPosition(strikerRef.current.body, { x, y: STRIKER_LINE_Y });
+      // Calculate initial aim direction
+      const dx = clickX - striker.x;
+      const dy = clickY - striker.y;
+      const angle = Math.atan2(dy, dx);
+      setAimAngle(angle);
+
+      // Calculate initial power
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      const newPower = Math.min(Math.max(distance / 2, 20), 100);
+      setPower(newPower);
     }
   }, [canShoot, isAnimating, isAITurn]);
 
@@ -361,7 +388,12 @@ const GameBoard: React.FC<GameBoardProps> = ({
       {isAITurn && <div className="turn-indicator">AI is thinking...</div>}
       {canShoot && !isAITurn && !isDragging && (
         <div className="turn-indicator" style={{ backgroundColor: 'rgba(76, 175, 80, 0.9)' }}>
-          Your turn! Drag from striker to aim and shoot
+          Click on striker line (top) to position | Click and drag below to aim and shoot
+        </div>
+      )}
+      {isDragging && (
+        <div className="turn-indicator" style={{ backgroundColor: 'rgba(33, 150, 243, 0.9)' }}>
+          Drag to adjust aim | Release to shoot (Power: {Math.round(power)}%)
         </div>
       )}
     </div>
