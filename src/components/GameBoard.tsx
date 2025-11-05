@@ -44,6 +44,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const [power, setPower] = useState(0);
   const [canShoot, setCanShoot] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
+  const piecePocketedThisTurnRef = useRef(false);
 
   const { gameConfig } = useGame();
 
@@ -145,26 +146,61 @@ const GameBoard: React.FC<GameBoardProps> = ({
         ctx.stroke();
       }
 
-      // Draw aim line when aiming
+      // Draw aim line when player can shoot
       if (canShoot && !isAnimating && !isAITurn && strikerRef.current) {
         const striker = strikerRef.current.body.position;
-        const aimLength = Math.min(power * 2, 200);
-        const endX = striker.x + Math.cos(aimAngle) * aimLength;
-        const endY = striker.y + Math.sin(aimAngle) * aimLength;
 
-        ctx.beginPath();
-        ctx.moveTo(striker.x, striker.y);
-        ctx.lineTo(endX, endY);
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
+        // Show aim line (either during drag or default hint)
+        if (isDragging || power > 0) {
+          const aimLength = Math.min(power * 2, 200);
+          const endX = striker.x + Math.cos(aimAngle) * aimLength;
+          const endY = striker.y + Math.sin(aimAngle) * aimLength;
 
-        // Draw power indicator
-        ctx.beginPath();
-        ctx.arc(striker.x, striker.y, 25 + power / 5, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(255, 215, 0, ${0.3 + power / 200})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(striker.x, striker.y);
+          ctx.lineTo(endX, endY);
+          ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+
+          // Draw power indicator
+          ctx.beginPath();
+          ctx.arc(striker.x, striker.y, 25 + power / 5, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(255, 215, 0, ${0.3 + power / 200})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        } else {
+          // Show default hint arrow pointing down
+          const hintLength = 80;
+          const endX = striker.x;
+          const endY = striker.y + hintLength;
+
+          ctx.beginPath();
+          ctx.moveTo(striker.x, striker.y);
+          ctx.lineTo(endX, endY);
+          ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
+          ctx.lineWidth = 3;
+          ctx.setLineDash([10, 5]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Draw arrow head
+          ctx.beginPath();
+          ctx.moveTo(endX, endY);
+          ctx.lineTo(endX - 10, endY - 15);
+          ctx.lineTo(endX + 10, endY - 15);
+          ctx.closePath();
+          ctx.fillStyle = 'rgba(255, 215, 0, 0.4)';
+          ctx.fill();
+
+          // Pulsing circle hint
+          const pulseSize = 30 + Math.sin(Date.now() / 300) * 5;
+          ctx.beginPath();
+          ctx.arc(striker.x, striker.y, pulseSize, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(255, 215, 0, 0.3)';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+        }
       }
 
       requestAnimationFrame(render);
@@ -181,11 +217,9 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
   // Check for pocketed pieces
   useEffect(() => {
-    if (!engineRef.current || isAnimating) return;
+    if (!engineRef.current) return;
 
     const checkInterval = setInterval(() => {
-      let piecePocketed = false;
-
       // Check all pieces
       piecesRef.current.forEach(piece => {
         if (!piece.pocketed && checkPocketed(piece.body)) {
@@ -199,7 +233,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
           else if (piece.type === PieceType.QUEEN) points = 50;
 
           onScoreUpdate(currentTurn, points, piece.type);
-          piecePocketed = true;
+          piecePocketedThisTurnRef.current = true;
         }
       });
 
@@ -216,10 +250,12 @@ const GameBoard: React.FC<GameBoardProps> = ({
         setIsAnimating(false);
         setCanShoot(true);
 
-        if (!piecePocketed) {
+        if (!piecePocketedThisTurnRef.current) {
           // No piece pocketed, end turn
           setTimeout(onTurnEnd, 500);
         }
+        // Reset for next turn
+        piecePocketedThisTurnRef.current = false;
       }
     }, 100);
 
@@ -244,6 +280,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         // Shoot
         setTimeout(() => {
+          // Reset piece pocketed tracker for new turn
+          piecePocketedThisTurnRef.current = false;
           applyStrikerForce(strikerRef.current!.body, aiMove.angle, aiMove.power);
           setIsAnimating(true);
           setCanShoot(false);
@@ -298,6 +336,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
     setIsDragging(false);
 
     if (power > 10) {
+      // Reset piece pocketed tracker for new turn
+      piecePocketedThisTurnRef.current = false;
       applyStrikerForce(strikerRef.current.body, aimAngle, power);
       setIsAnimating(true);
       setCanShoot(false);
@@ -317,8 +357,13 @@ const GameBoard: React.FC<GameBoardProps> = ({
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
       />
-      {!canShoot && <div className="turn-indicator">Pieces in motion...</div>}
+      {!canShoot && !isAITurn && <div className="turn-indicator">Pieces in motion...</div>}
       {isAITurn && <div className="turn-indicator">AI is thinking...</div>}
+      {canShoot && !isAITurn && !isDragging && (
+        <div className="turn-indicator" style={{ backgroundColor: 'rgba(76, 175, 80, 0.9)' }}>
+          Your turn! Drag from striker to aim and shoot
+        </div>
+      )}
     </div>
   );
 };
