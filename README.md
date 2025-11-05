@@ -35,29 +35,16 @@ A complete, production-ready Progressive Web App (PWA) for playing Carrom Pool o
    npm install
    ```
 
-3. **Set up Firebase**
-   - Go to [Firebase Console](https://console.firebase.google.com/)
-   - Create a new project
-   - Enable Authentication (Anonymous sign-in)
-   - Enable Firestore Database
-   - Copy your Firebase config
+3. **Firebase is already configured!**
 
-4. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   ```
+   The app is connected to Firebase project: `carrompool-94dfd`
 
-   Edit `.env` and add your Firebase credentials:
-   ```env
-   VITE_FIREBASE_API_KEY=your_api_key
-   VITE_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-   VITE_FIREBASE_PROJECT_ID=your_project_id
-   VITE_FIREBASE_STORAGE_BUCKET=your_project.appspot.com
-   VITE_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-   VITE_FIREBASE_APP_ID=your_app_id
-   ```
+   ⚠️ **Important**: Before running, enable these in [Firebase Console](https://console.firebase.google.com/):
+   - ✅ Authentication → Anonymous sign-in
+   - ✅ Firestore Database (Production mode)
+   - ✅ Firebase Hosting
 
-5. **Run development server**
+4. **Run development server**
    ```bash
    npm run dev
    ```
@@ -78,6 +65,25 @@ A complete, production-ready Progressive Web App (PWA) for playing Carrom Pool o
 
 ## 🔥 Firebase Deployment
 
+### ⚡ Quick Deploy (Recommended)
+
+**One-command deployment:**
+```bash
+./deploy.sh
+```
+
+This script will:
+- ✅ Build the production bundle
+- ✅ Deploy Firestore rules and indexes
+- ✅ Deploy to Firebase Hosting
+- ✅ Show your live app URLs
+
+**Your app will be live at:**
+- https://carrompool-94dfd.web.app
+- https://carrompool-94dfd.firebaseapp.com
+
+### 📋 Manual Deployment
+
 1. **Install Firebase CLI**
    ```bash
    npm install -g firebase-tools
@@ -88,29 +94,19 @@ A complete, production-ready Progressive Web App (PWA) for playing Carrom Pool o
    firebase login
    ```
 
-3. **Initialize Firebase (if not already done)**
-   ```bash
-   firebase init
-   ```
-   - Select: Hosting, Firestore
-   - Choose your Firebase project
-   - Use `dist` as the public directory
-   - Configure as single-page app: Yes
-   - Don't overwrite existing files
-
-4. **Deploy Firestore rules**
+3. **Deploy Firestore rules**
    ```bash
    firebase deploy --only firestore:rules
    firebase deploy --only firestore:indexes
    ```
 
-5. **Build and deploy**
+4. **Build and deploy**
    ```bash
    npm run build
    firebase deploy --only hosting
    ```
 
-   Your app will be live at `https://your-project.web.app`
+📖 **For detailed deployment instructions, see [DEPLOYMENT.md](./DEPLOYMENT.md)**
 
 ## 📱 PWA Installation
 
