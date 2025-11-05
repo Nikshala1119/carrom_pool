@@ -48,6 +48,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const [isAnimating, setIsAnimating] = useState(false);
   const piecePocketedThisTurnRef = useRef(false);
   const shotTakenThisTurnRef = useRef(false);
+  const aiTurnInProgressRef = useRef(false);  // Track if AI is currently taking a turn
 
   const { gameConfig } = useGame();
 
@@ -175,16 +176,35 @@ const GameBoard: React.FC<GameBoardProps> = ({
         }
       });
 
-      // Draw only the CURRENT player's striker
-      if (currentStrikerRef.current && !currentStrikerRef.current.pocketed) {
-        const { x, y } = currentStrikerRef.current.body.position;
-        ctx.beginPath();
-        ctx.arc(x, y, 18, 0, Math.PI * 2);
-        ctx.fillStyle = currentStrikerRef.current.body.render.fillStyle as string;
-        ctx.fill();
-        ctx.strokeStyle = '#333333';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+      // Draw both strikers, but only the active one
+      // Player 1 striker (green) - visible when it's P1's turn or when animating P1's shot
+      if (strikerP1Ref.current && !strikerP1Ref.current.pocketed) {
+        const isP1Active = strikerP1Ref.current.body.collisionFilter.group === 0;
+        if (isP1Active) {
+          const { x, y } = strikerP1Ref.current.body.position;
+          ctx.beginPath();
+          ctx.arc(x, y, 18, 0, Math.PI * 2);
+          ctx.fillStyle = strikerP1Ref.current.body.render.fillStyle as string;
+          ctx.fill();
+          ctx.strokeStyle = '#333333';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+      }
+
+      // Player 2 striker (blue) - visible when it's P2's turn or when animating P2's shot
+      if (strikerP2Ref.current && !strikerP2Ref.current.pocketed) {
+        const isP2Active = strikerP2Ref.current.body.collisionFilter.group === 0;
+        if (isP2Active) {
+          const { x, y } = strikerP2Ref.current.body.position;
+          ctx.beginPath();
+          ctx.arc(x, y, 18, 0, Math.PI * 2);
+          ctx.fillStyle = strikerP2Ref.current.body.render.fillStyle as string;
+          ctx.fill();
+          ctx.strokeStyle = '#333333';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
       }
 
       // Draw aim line when player can shoot
@@ -297,6 +317,9 @@ const GameBoard: React.FC<GameBoardProps> = ({
   // Update striker position when turn changes
   useEffect(() => {
     if (strikerP1Ref.current && strikerP2Ref.current && canShoot && !isAnimating) {
+      // Reset AI turn flag
+      aiTurnInProgressRef.current = false;
+
       // Activate current player's striker, deactivate the other
       if (isPlayer1Turn) {
         // Player 1's turn
@@ -380,32 +403,73 @@ const GameBoard: React.FC<GameBoardProps> = ({
     return () => clearInterval(checkInterval);
   }, [isAnimating, currentTurn, onScoreUpdate, onTurnEnd]);
 
-  // AI turn handler
+  // AI turn handler with proper timing
   useEffect(() => {
-    if (isAITurn && canShoot && !isAnimating && strikerP2Ref.current) {
-      setTimeout(() => {
+    // Only trigger if:
+    // 1. It's AI's turn
+    // 2. Can shoot (pieces are stationary)
+    // 3. Not currently animating
+    // 4. AI turn not already in progress
+    // 5. Striker exists
+    if (isAITurn && canShoot && !isAnimating && !aiTurnInProgressRef.current && strikerP2Ref.current) {
+      // Mark AI turn as in progress to prevent duplicate triggers
+      aiTurnInProgressRef.current = true;
+
+      console.log('AI turn starting...');
+
+      // AI thinking delay
+      const thinkingTimeout = setTimeout(() => {
+        // Verify conditions are still valid
+        if (!strikerP2Ref.current || !canShoot) {
+          console.log('AI turn cancelled - conditions changed');
+          aiTurnInProgressRef.current = false;
+          return;
+        }
+
         const targetColor = gameConfig?.player2.color === PieceType.WHITE
           ? PieceType.WHITE
           : PieceType.BLACK;
 
         const aiMove = calculateAIMove(piecesRef.current, targetColor, AIDifficulty.MEDIUM);
 
+        console.log('AI positioning striker...');
         // Position Player 2's striker (blue) at top
-        Matter.Body.setPosition(strikerP2Ref.current!.body, {
+        Matter.Body.setPosition(strikerP2Ref.current.body, {
           x: aiMove.strikerX,
           y: STRIKER_LINE_Y_PLAYER2
         });
 
-        // Shoot
-        setTimeout(() => {
+        // Reset velocity
+        Matter.Body.setVelocity(strikerP2Ref.current.body, { x: 0, y: 0 });
+        Matter.Body.setAngularVelocity(strikerP2Ref.current.body, 0);
+
+        // AI shooting delay
+        const shootTimeout = setTimeout(() => {
+          // Final check before shooting
+          if (!strikerP2Ref.current || !canShoot) {
+            console.log('AI shot cancelled - conditions changed');
+            aiTurnInProgressRef.current = false;
+            return;
+          }
+
+          console.log('AI shooting...');
           // Mark that a shot was taken this turn
           shotTakenThisTurnRef.current = true;
           piecePocketedThisTurnRef.current = false;
-          applyStrikerForce(strikerP2Ref.current!.body, aiMove.angle, aiMove.power);
+
+          applyStrikerForce(strikerP2Ref.current.body, aiMove.angle, aiMove.power);
           setIsAnimating(true);
           setCanShoot(false);
+
+          // AI turn will be reset when turn changes or pieces stop
         }, 500);
+
+        return () => clearTimeout(shootTimeout);
       }, 1000);
+
+      return () => {
+        clearTimeout(thinkingTimeout);
+      };
     }
   }, [isAITurn, canShoot, isAnimating, gameConfig]);
 
