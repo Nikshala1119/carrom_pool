@@ -10,8 +10,10 @@ import {
   checkPocketed,
   resetStrikerPosition,
   arePiecesStationary,
+  getStrikerLineY,
   BOARD_SIZE,
-  STRIKER_LINE_Y,
+  STRIKER_LINE_Y_PLAYER1,
+  STRIKER_LINE_Y_PLAYER2,
   POCKET_POSITIONS,
   POCKET_RADIUS
 } from '../utils/physics';
@@ -39,18 +41,21 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const strikerRef = useRef<Piece | null>(null);
 
   const [isDragging, setIsDragging] = useState(false);
-  const [strikerPosition, setStrikerPosition] = useState({ x: BOARD_SIZE / 2, y: STRIKER_LINE_Y });
-  const [aimAngle, setAimAngle] = useState(-Math.PI / 2);  // Point upward toward board center
+  const [aimAngle, setAimAngle] = useState(-Math.PI / 2);
   const [power, setPower] = useState(0);
   const [canShoot, setCanShoot] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
   const piecePocketedThisTurnRef = useRef(false);
 
-  // Striker line area bounds (bottom 150px of board, from y=450 to y=600)
-  const STRIKER_AREA_MIN_Y = STRIKER_LINE_Y - 50;  // y=450
-  const STRIKER_AREA_MAX_Y = BOARD_SIZE;  // y=600
-
   const { gameConfig } = useGame();
+
+  // Determine whose turn and calculate striker position
+  const isPlayer1Turn = currentTurn === PlayerTurn.PLAYER1;
+  const strikerLineY = getStrikerLineY(isPlayer1Turn);
+
+  // Striker line area bounds - changes based on player
+  const STRIKER_AREA_MIN_Y = isPlayer1Turn ? strikerLineY - 50 : strikerLineY - 10;
+  const STRIKER_AREA_MAX_Y = isPlayer1Turn ? BOARD_SIZE : strikerLineY + 50;
 
   // Initialize physics engine
   useEffect(() => {
@@ -68,10 +73,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
     const pieces = setupBoard();
     piecesRef.current = pieces;
 
-    // Create striker
+    // Create striker at Player 1's position initially
     const striker = createPiece(
-      strikerPosition.x,
-      strikerPosition.y,
+      BOARD_SIZE / 2,
+      STRIKER_LINE_Y_PLAYER1,
       PieceType.STRIKER,
       'striker'
     );
@@ -89,6 +94,12 @@ const GameBoard: React.FC<GameBoardProps> = ({
     // Custom render loop
     const render = () => {
       if (!ctx) return;
+
+      // Get current turn info for rendering
+      const currentIsPlayer1 = currentTurn === PlayerTurn.PLAYER1;
+      const currentStrikerLineY = getStrikerLineY(currentIsPlayer1);
+      const currentStrikerMinY = currentIsPlayer1 ? currentStrikerLineY - 50 : currentStrikerLineY - 10;
+      const currentStrikerMaxY = currentIsPlayer1 ? BOARD_SIZE : currentStrikerLineY + 50;
 
       // Clear canvas
       ctx.fillStyle = '#d4a574';
@@ -114,20 +125,20 @@ const GameBoard: React.FC<GameBoardProps> = ({
         ctx.fill();
       });
 
-      // Draw striker line area (clickable region for positioning at BOTTOM of board)
+      // Draw striker line area (clickable region for positioning)
       if (canShoot && !isAnimating && !isAITurn) {
         ctx.fillStyle = 'rgba(76, 175, 80, 0.1)';
-        ctx.fillRect(0, STRIKER_AREA_MIN_Y, BOARD_SIZE, STRIKER_AREA_MAX_Y - STRIKER_AREA_MIN_Y);
+        ctx.fillRect(0, currentStrikerMinY, BOARD_SIZE, currentStrikerMaxY - currentStrikerMinY);
 
         ctx.strokeStyle = 'rgba(76, 175, 80, 0.3)';
         ctx.lineWidth = 2;
-        ctx.strokeRect(0, STRIKER_AREA_MIN_Y, BOARD_SIZE, STRIKER_AREA_MAX_Y - STRIKER_AREA_MIN_Y);
+        ctx.strokeRect(0, currentStrikerMinY, BOARD_SIZE, currentStrikerMaxY - currentStrikerMinY);
       }
 
-      // Draw striker line
+      // Draw striker line for current player
       ctx.beginPath();
-      ctx.moveTo(50, STRIKER_LINE_Y);
-      ctx.lineTo(BOARD_SIZE - 50, STRIKER_LINE_Y);
+      ctx.moveTo(50, currentStrikerLineY);
+      ctx.lineTo(BOARD_SIZE - 50, currentStrikerLineY);
       ctx.strokeStyle = 'rgba(139, 69, 19, 0.5)';
       ctx.lineWidth = 3;
       ctx.setLineDash([10, 5]);
@@ -184,10 +195,12 @@ const GameBoard: React.FC<GameBoardProps> = ({
           ctx.lineWidth = 2;
           ctx.stroke();
         } else {
-          // Show default hint arrow pointing UP toward board center
+          // Show default hint arrow - direction based on player
           const hintLength = 80;
           const endX = striker.x;
-          const endY = striker.y - hintLength;  // Negative Y = upward
+          const endY = currentIsPlayer1
+            ? striker.y - hintLength  // Player 1: aim upward
+            : striker.y + hintLength; // Player 2: aim downward
 
           ctx.beginPath();
           ctx.moveTo(striker.x, striker.y);
@@ -198,14 +211,26 @@ const GameBoard: React.FC<GameBoardProps> = ({
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Draw arrow head pointing up
-          ctx.beginPath();
-          ctx.moveTo(endX, endY);
-          ctx.lineTo(endX - 10, endY + 15);
-          ctx.lineTo(endX + 10, endY + 15);
-          ctx.closePath();
-          ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
-          ctx.fill();
+          // Draw arrow head
+          if (currentIsPlayer1) {
+            // Arrow pointing up
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - 10, endY + 15);
+            ctx.lineTo(endX + 10, endY + 15);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+            ctx.fill();
+          } else {
+            // Arrow pointing down
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - 10, endY - 15);
+            ctx.lineTo(endX + 10, endY - 15);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
+            ctx.fill();
+          }
 
           // Pulsing circle hint
           const pulseSize = 30 + Math.sin(Date.now() / 300) * 5;
@@ -228,6 +253,18 @@ const GameBoard: React.FC<GameBoardProps> = ({
       Matter.Engine.clear(engine);
     };
   }, []);
+
+  // Update striker position when turn changes
+  useEffect(() => {
+    if (strikerRef.current && canShoot && !isAnimating) {
+      resetStrikerPosition(strikerRef.current.body, isPlayer1Turn);
+
+      // Reset aim angle based on player direction
+      setAimAngle(isPlayer1Turn ? -Math.PI / 2 : Math.PI / 2);
+      setPower(0);
+      setIsDragging(false);
+    }
+  }, [currentTurn, canShoot, isAnimating, isPlayer1Turn]);
 
   // Check for pocketed pieces
   useEffect(() => {
@@ -255,7 +292,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
       if (strikerRef.current && !strikerRef.current.pocketed && checkPocketed(strikerRef.current.body)) {
         strikerRef.current.pocketed = true;
         onScoreUpdate(currentTurn, -10, PieceType.STRIKER);
-        resetStrikerPosition(strikerRef.current.body);
+        resetStrikerPosition(strikerRef.current.body, isPlayer1Turn);
         strikerRef.current.pocketed = false;
       }
 
@@ -286,10 +323,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         const aiMove = calculateAIMove(piecesRef.current, targetColor, AIDifficulty.MEDIUM);
 
-        // Position striker
+        // Position striker at Player 2's line (top)
         Matter.Body.setPosition(strikerRef.current!.body, {
           x: aiMove.strikerX,
-          y: STRIKER_LINE_Y
+          y: STRIKER_LINE_Y_PLAYER2
         });
 
         // Shoot
@@ -315,12 +352,14 @@ const GameBoard: React.FC<GameBoardProps> = ({
     const clickY = e.clientY - rect.top;
     const striker = strikerRef.current.body.position;
 
-    // Allow repositioning if clicking in striker line area (BOTTOM: y > 450)
-    if (clickY >= STRIKER_AREA_MIN_Y) {
+    // Check if clicking in striker line area (changes based on player)
+    const isInStrikerArea = (isPlayer1Turn && clickY >= STRIKER_AREA_MIN_Y) ||
+                           (!isPlayer1Turn && clickY <= STRIKER_AREA_MAX_Y);
+
+    if (isInStrikerArea) {
       // Position striker on striker line at click X position
       const clampedX = Math.max(50, Math.min(BOARD_SIZE - 50, clickX));
-      Matter.Body.setPosition(strikerRef.current.body, { x: clampedX, y: STRIKER_LINE_Y });
-      setStrikerPosition({ x: clampedX, y: STRIKER_LINE_Y });
+      Matter.Body.setPosition(strikerRef.current.body, { x: clampedX, y: strikerLineY });
       // Reset velocity to prevent drift
       Matter.Body.setVelocity(strikerRef.current.body, { x: 0, y: 0 });
       Matter.Body.setAngularVelocity(strikerRef.current.body, 0);
@@ -339,7 +378,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
       const newPower = Math.min(Math.max(distance / 2, 20), 100);
       setPower(newPower);
     }
-  }, [canShoot, isAnimating, isAITurn]);
+  }, [canShoot, isAnimating, isAITurn, isPlayer1Turn, strikerLineY, STRIKER_AREA_MIN_Y, STRIKER_AREA_MAX_Y]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!isDragging || !strikerRef.current) return;
@@ -395,12 +434,14 @@ const GameBoard: React.FC<GameBoardProps> = ({
       {isAITurn && <div className="turn-indicator">AI is thinking...</div>}
       {canShoot && !isAITurn && !isDragging && (
         <div className="turn-indicator" style={{ backgroundColor: 'rgba(76, 175, 80, 0.9)' }}>
-          Click green area (bottom) to position striker | Click above and drag to aim and shoot
+          {isPlayer1Turn
+            ? "YOUR TURN (Bottom) - Click green area to position | Click and drag to shoot"
+            : "PLAYER 2 TURN (Top) - Click green area to position | Click and drag to shoot"}
         </div>
       )}
       {isDragging && (
         <div className="turn-indicator" style={{ backgroundColor: 'rgba(33, 150, 243, 0.9)' }}>
-          Drag to adjust aim and power | Release to shoot (Power: {Math.round(power)}%)
+          {isPlayer1Turn ? "Player 1" : "Player 2"} - Drag to aim | Release to shoot (Power: {Math.round(power)}%)
         </div>
       )}
     </div>

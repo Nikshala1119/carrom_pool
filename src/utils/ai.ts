@@ -1,5 +1,5 @@
 import { Piece, PieceType } from '../types/game';
-import { BOARD_SIZE, STRIKER_LINE_Y } from './physics';
+import { BOARD_SIZE, STRIKER_LINE_Y_PLAYER2 } from './physics';
 
 export interface AIMove {
   strikerX: number;
@@ -36,8 +36,8 @@ export const calculateAIMove = (
     return getRandomMove();
   }
 
-  // Calculate shot parameters
-  const strikerY = STRIKER_LINE_Y;
+  // Calculate shot parameters (AI always shoots from Player 2 position - top)
+  const strikerY = STRIKER_LINE_Y_PLAYER2;
   const targetX = targetPiece.body.position.x;
   const targetY = targetPiece.body.position.y;
 
@@ -77,8 +77,8 @@ const selectBestTarget = (pieces: Piece[], difficulty: AIDifficulty): Piece | nu
     return pieces[Math.floor(Math.random() * pieces.length)];
   }
 
-  // Medium/Hard: Select closest piece to striker line
-  const strikerY = STRIKER_LINE_Y;
+  // Medium/Hard: Select closest piece to striker line (AI at top)
+  const strikerY = STRIKER_LINE_Y_PLAYER2;
 
   let bestPiece = pieces[0];
   let bestScore = Infinity;

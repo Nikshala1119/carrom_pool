@@ -10,7 +10,8 @@ export const POCKET_RADIUS = 30;
 export const FRICTION = 0.05;  // Lower friction for smoother carrom feel
 export const AIR_FRICTION = 0.15;  // Higher air resistance for realistic slowdown
 export const RESTITUTION = 0.8;  // Slightly less bouncy
-export const STRIKER_LINE_Y = BOARD_SIZE - 100;  // y=500, near bottom of board
+export const STRIKER_LINE_Y_PLAYER1 = BOARD_SIZE - 100;  // y=500, bottom player
+export const STRIKER_LINE_Y_PLAYER2 = 100;  // y=100, top player
 
 // Pocket positions (corners)
 export const POCKET_POSITIONS = [
@@ -185,10 +186,13 @@ export const checkPocketed = (piece: Matter.Body): boolean => {
   return false;
 };
 
-export const isStrikerInValidPosition = (x: number, y: number): boolean => {
+export const getStrikerLineY = (isPlayer1: boolean): number => {
+  return isPlayer1 ? STRIKER_LINE_Y_PLAYER1 : STRIKER_LINE_Y_PLAYER2;
+};
+
+export const isStrikerInValidPosition = (x: number, y: number, strikerY: number): boolean => {
   const minX = BOARD_PADDING + STRIKER_RADIUS;
   const maxX = BOARD_SIZE - BOARD_PADDING - STRIKER_RADIUS;
-  const strikerY = STRIKER_LINE_Y;
   const tolerance = 20;
 
   return (
@@ -198,8 +202,9 @@ export const isStrikerInValidPosition = (x: number, y: number): boolean => {
   );
 };
 
-export const resetStrikerPosition = (striker: Matter.Body) => {
-  Matter.Body.setPosition(striker, { x: BOARD_SIZE / 2, y: STRIKER_LINE_Y });
+export const resetStrikerPosition = (striker: Matter.Body, isPlayer1: boolean) => {
+  const strikerY = getStrikerLineY(isPlayer1);
+  Matter.Body.setPosition(striker, { x: BOARD_SIZE / 2, y: strikerY });
   Matter.Body.setVelocity(striker, { x: 0, y: 0 });
   Matter.Body.setAngularVelocity(striker, 0);
 };
