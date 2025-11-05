@@ -6,10 +6,11 @@ export const BOARD_SIZE = 600;
 export const BOARD_PADDING = 50;
 export const PIECE_RADIUS = 15;
 export const STRIKER_RADIUS = 18;
-export const POCKET_RADIUS = 25;
-export const FRICTION = 0.08;
-export const RESTITUTION = 0.85;
-export const STRIKER_LINE_Y = BOARD_SIZE - 100;
+export const POCKET_RADIUS = 30;
+export const FRICTION = 0.05;  // Lower friction for smoother carrom feel
+export const AIR_FRICTION = 0.15;  // Higher air resistance for realistic slowdown
+export const RESTITUTION = 0.8;  // Slightly less bouncy
+export const STRIKER_LINE_Y = BOARD_SIZE - 100;  // y=500, near bottom of board
 
 // Pocket positions (corners)
 export const POCKET_POSITIONS = [
@@ -65,8 +66,9 @@ export const createPiece = (x: number, y: number, type: PieceType, id: string): 
   const body = Matter.Bodies.circle(x, y, radius, {
     restitution: RESTITUTION,
     friction: FRICTION,
-    frictionAir: FRICTION,
-    density: 0.001,
+    frictionAir: AIR_FRICTION,
+    density: isStriker ? 0.008 : 0.005,  // Striker heavier than pieces
+    inertia: Infinity,  // Prevent spinning for more predictable physics
     render: {
       fillStyle: color,
       strokeStyle: type === PieceType.QUEEN ? '#FFD700' : '#8B4513',
@@ -157,9 +159,12 @@ export const createBoardBoundaries = () => {
 };
 
 export const applyStrikerForce = (striker: Matter.Body, angle: number, power: number) => {
+  // Increased force multiplier for more responsive gameplay
+  // Power ranges from 20-100, this gives forces of 0.4 to 2.0
+  const forceMagnitude = power * 0.02;
   const force = {
-    x: Math.cos(angle) * power * 0.01,
-    y: Math.sin(angle) * power * 0.01
+    x: Math.cos(angle) * forceMagnitude,
+    y: Math.sin(angle) * forceMagnitude
   };
   Matter.Body.applyForce(striker, striker.position, force);
 };
@@ -204,6 +209,8 @@ export const arePiecesStationary = (pieces: Piece[]): boolean => {
     if (piece.pocketed) return true;
     const velocity = piece.body.velocity;
     const speed = Math.sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
-    return speed < 0.1;
+    const angularSpeed = Math.abs(piece.body.angularVelocity);
+    // Piece is stationary if both linear and angular velocity are very low
+    return speed < 0.05 && angularSpeed < 0.01;
   });
 };

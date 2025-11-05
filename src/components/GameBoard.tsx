@@ -40,11 +40,15 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
   const [isDragging, setIsDragging] = useState(false);
   const [strikerPosition, setStrikerPosition] = useState({ x: BOARD_SIZE / 2, y: STRIKER_LINE_Y });
-  const [aimAngle, setAimAngle] = useState(-Math.PI / 2);
+  const [aimAngle, setAimAngle] = useState(-Math.PI / 2);  // Point upward toward board center
   const [power, setPower] = useState(0);
   const [canShoot, setCanShoot] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
   const piecePocketedThisTurnRef = useRef(false);
+
+  // Striker line area bounds (bottom 150px of board, from y=450 to y=600)
+  const STRIKER_AREA_MIN_Y = STRIKER_LINE_Y - 50;  // y=450
+  const STRIKER_AREA_MAX_Y = BOARD_SIZE;  // y=600
 
   const { gameConfig } = useGame();
 
@@ -110,14 +114,14 @@ const GameBoard: React.FC<GameBoardProps> = ({
         ctx.fill();
       });
 
-      // Draw striker line area (clickable region for positioning)
+      // Draw striker line area (clickable region for positioning at BOTTOM of board)
       if (canShoot && !isAnimating && !isAITurn) {
         ctx.fillStyle = 'rgba(76, 175, 80, 0.1)';
-        ctx.fillRect(0, 0, BOARD_SIZE, 150);
+        ctx.fillRect(0, STRIKER_AREA_MIN_Y, BOARD_SIZE, STRIKER_AREA_MAX_Y - STRIKER_AREA_MIN_Y);
 
         ctx.strokeStyle = 'rgba(76, 175, 80, 0.3)';
-        ctx.lineWidth = 1;
-        ctx.strokeRect(0, 0, BOARD_SIZE, 150);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, STRIKER_AREA_MIN_Y, BOARD_SIZE, STRIKER_AREA_MAX_Y - STRIKER_AREA_MIN_Y);
       }
 
       // Draw striker line
@@ -180,27 +184,27 @@ const GameBoard: React.FC<GameBoardProps> = ({
           ctx.lineWidth = 2;
           ctx.stroke();
         } else {
-          // Show default hint arrow pointing down
+          // Show default hint arrow pointing UP toward board center
           const hintLength = 80;
           const endX = striker.x;
-          const endY = striker.y + hintLength;
+          const endY = striker.y - hintLength;  // Negative Y = upward
 
           ctx.beginPath();
           ctx.moveTo(striker.x, striker.y);
           ctx.lineTo(endX, endY);
-          ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
-          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
+          ctx.lineWidth = 4;
           ctx.setLineDash([10, 5]);
           ctx.stroke();
           ctx.setLineDash([]);
 
-          // Draw arrow head
+          // Draw arrow head pointing up
           ctx.beginPath();
           ctx.moveTo(endX, endY);
-          ctx.lineTo(endX - 10, endY - 15);
-          ctx.lineTo(endX + 10, endY - 15);
+          ctx.lineTo(endX - 10, endY + 15);
+          ctx.lineTo(endX + 10, endY + 15);
           ctx.closePath();
-          ctx.fillStyle = 'rgba(255, 215, 0, 0.4)';
+          ctx.fillStyle = 'rgba(255, 215, 0, 0.5)';
           ctx.fill();
 
           // Pulsing circle hint
@@ -311,12 +315,15 @@ const GameBoard: React.FC<GameBoardProps> = ({
     const clickY = e.clientY - rect.top;
     const striker = strikerRef.current.body.position;
 
-    // Allow repositioning if clicking on striker line area (y < 150)
-    if (clickY < 150) {
+    // Allow repositioning if clicking in striker line area (BOTTOM: y > 450)
+    if (clickY >= STRIKER_AREA_MIN_Y) {
       // Position striker on striker line at click X position
       const clampedX = Math.max(50, Math.min(BOARD_SIZE - 50, clickX));
       Matter.Body.setPosition(strikerRef.current.body, { x: clampedX, y: STRIKER_LINE_Y });
       setStrikerPosition({ x: clampedX, y: STRIKER_LINE_Y });
+      // Reset velocity to prevent drift
+      Matter.Body.setVelocity(strikerRef.current.body, { x: 0, y: 0 });
+      Matter.Body.setAngularVelocity(strikerRef.current.body, 0);
     } else {
       // Start aiming from current striker position
       setIsDragging(true);
@@ -388,12 +395,12 @@ const GameBoard: React.FC<GameBoardProps> = ({
       {isAITurn && <div className="turn-indicator">AI is thinking...</div>}
       {canShoot && !isAITurn && !isDragging && (
         <div className="turn-indicator" style={{ backgroundColor: 'rgba(76, 175, 80, 0.9)' }}>
-          Click on striker line (top) to position | Click and drag below to aim and shoot
+          Click green area (bottom) to position striker | Click above and drag to aim and shoot
         </div>
       )}
       {isDragging && (
         <div className="turn-indicator" style={{ backgroundColor: 'rgba(33, 150, 243, 0.9)' }}>
-          Drag to adjust aim | Release to shoot (Power: {Math.round(power)}%)
+          Drag to adjust aim and power | Release to shoot (Power: {Math.round(power)}%)
         </div>
       )}
     </div>
