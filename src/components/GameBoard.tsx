@@ -46,6 +46,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const [canShoot, setCanShoot] = useState(true);
   const [isAnimating, setIsAnimating] = useState(false);
   const piecePocketedThisTurnRef = useRef(false);
+  const shotTakenThisTurnRef = useRef(false);
 
   const { gameConfig } = useGame();
 
@@ -263,6 +264,10 @@ const GameBoard: React.FC<GameBoardProps> = ({
       setAimAngle(isPlayer1Turn ? -Math.PI / 2 : Math.PI / 2);
       setPower(0);
       setIsDragging(false);
+
+      // Reset turn flags when turn changes
+      piecePocketedThisTurnRef.current = false;
+      shotTakenThisTurnRef.current = false;
     }
   }, [currentTurn, canShoot, isAnimating, isPlayer1Turn]);
 
@@ -271,6 +276,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
     if (!engineRef.current) return;
 
     const checkInterval = setInterval(() => {
+      // Get current player's color
+      const currentPlayerColor = gameConfig
+        ? (currentTurn === PlayerTurn.PLAYER1 ? gameConfig.player1.color : gameConfig.player2.color)
+        : PieceType.WHITE;
+
       // Check all pieces
       piecesRef.current.forEach(piece => {
         if (!piece.pocketed && checkPocketed(piece.body)) {
@@ -284,7 +294,11 @@ const GameBoard: React.FC<GameBoardProps> = ({
           else if (piece.type === PieceType.QUEEN) points = 50;
 
           onScoreUpdate(currentTurn, points, piece.type);
-          piecePocketedThisTurnRef.current = true;
+
+          // Only continue turn if player pocketed their own color or queen
+          if (piece.type === currentPlayerColor || piece.type === PieceType.QUEEN) {
+            piecePocketedThisTurnRef.current = true;
+          }
         }
       });
 
@@ -301,11 +315,13 @@ const GameBoard: React.FC<GameBoardProps> = ({
         setIsAnimating(false);
         setCanShoot(true);
 
-        if (!piecePocketedThisTurnRef.current) {
+        // Only end turn if shot was taken AND no piece was pocketed
+        if (shotTakenThisTurnRef.current && !piecePocketedThisTurnRef.current) {
           // No piece pocketed, end turn
           setTimeout(onTurnEnd, 500);
         }
-        // Reset for next turn
+
+        // Reset pocketed flag for next shot (but keep shotTaken until turn changes)
         piecePocketedThisTurnRef.current = false;
       }
     }, 100);
@@ -331,7 +347,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
         // Shoot
         setTimeout(() => {
-          // Reset piece pocketed tracker for new turn
+          // Mark that a shot was taken this turn
+          shotTakenThisTurnRef.current = true;
           piecePocketedThisTurnRef.current = false;
           applyStrikerForce(strikerRef.current!.body, aiMove.angle, aiMove.power);
           setIsAnimating(true);
@@ -409,7 +426,8 @@ const GameBoard: React.FC<GameBoardProps> = ({
     setIsDragging(false);
 
     if (power > 10) {
-      // Reset piece pocketed tracker for new turn
+      // Mark that a shot was taken this turn
+      shotTakenThisTurnRef.current = true;
       piecePocketedThisTurnRef.current = false;
       applyStrikerForce(strikerRef.current.body, aimAngle, power);
       setIsAnimating(true);
