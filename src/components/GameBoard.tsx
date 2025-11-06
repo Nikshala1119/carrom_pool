@@ -39,6 +39,7 @@ const GameBoard: React.FC<GameBoardProps> = ({
   const strikerRef = useRef<Piece | null>(null);
 
   const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
   const [strikerPosition, setStrikerPosition] = useState({ x: BOARD_SIZE / 2, y: STRIKER_LINE_Y });
   const [aimAngle, setAimAngle] = useState(-Math.PI / 2);
   const [power, setPower] = useState(0);
@@ -148,23 +149,42 @@ const GameBoard: React.FC<GameBoardProps> = ({
       // Draw aim line when aiming
       if (canShoot && !isAnimating && !isAITurn && strikerRef.current) {
         const striker = strikerRef.current.body.position;
-        const aimLength = Math.min(power * 2, 200);
-        const endX = striker.x + Math.cos(aimAngle) * aimLength;
-        const endY = striker.y + Math.sin(aimAngle) * aimLength;
+        
+        // Only show aim line when dragging or power > 0
+        if (isDragging || power > 0) {
+          const aimLength = Math.min(power * 2, 200);
+          const endX = striker.x + Math.cos(aimAngle) * aimLength;
+          const endY = striker.y + Math.sin(aimAngle) * aimLength;
 
-        ctx.beginPath();
-        ctx.moveTo(striker.x, striker.y);
-        ctx.lineTo(endX, endY);
-        ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
-        ctx.lineWidth = 3;
-        ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(striker.x, striker.y);
+          ctx.lineTo(endX, endY);
+          ctx.strokeStyle = 'rgba(255, 215, 0, 0.7)';
+          ctx.lineWidth = 3;
+          ctx.stroke();
 
-        // Draw power indicator
-        ctx.beginPath();
-        ctx.arc(striker.x, striker.y, 25 + power / 5, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(255, 215, 0, ${0.3 + power / 200})`;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+          // Draw power indicator
+          ctx.beginPath();
+          ctx.arc(striker.x, striker.y, 25 + power / 5, 0, Math.PI * 2);
+          ctx.strokeStyle = `rgba(255, 215, 0, ${0.3 + power / 200})`;
+          ctx.lineWidth = 2;
+          ctx.stroke();
+          
+          // Draw extended guide line (dotted)
+          if (power > 10) {
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            const extendedLength = 300;
+            const extendedX = striker.x + Math.cos(aimAngle) * extendedLength;
+            const extendedY = striker.y + Math.sin(aimAngle) * extendedLength;
+            ctx.lineTo(extendedX, extendedY);
+            ctx.strokeStyle = 'rgba(255, 215, 0, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        }
       }
 
       requestAnimationFrame(render);
@@ -254,23 +274,36 @@ const GameBoard: React.FC<GameBoardProps> = ({
 
   // Mouse/Touch handlers for striker control
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
-    if (!canShoot || isAnimating || isAITurn) return;
+    if (!canShoot || isAnimating || isAITurn || !strikerRef.current) return;
 
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
 
     const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
 
-    setIsDragging(true);
-    setStrikerPosition({ x, y: STRIKER_LINE_Y });
+    // Check if clicking near the striker (within 50px radius)
+    const striker = strikerRef.current.body.position;
+    const distance = Math.sqrt(
+      Math.pow(x - striker.x, 2) + Math.pow(y - striker.y, 2)
+    );
 
-    if (strikerRef.current) {
-      Matter.Body.setPosition(strikerRef.current.body, { x, y: STRIKER_LINE_Y });
+    // If clicking on/near striker, start aiming from current position
+    if (distance < 50) {
+      setIsDragging(true);
+      setDragStart({ x: striker.x, y: striker.y });
+    } else {
+      // Otherwise, move striker to clicked X position on baseline, then start drag
+      const clampedX = Math.max(80, Math.min(x, BOARD_SIZE - 80));
+      setStrikerPosition({ x: clampedX, y: STRIKER_LINE_Y });
+      Matter.Body.setPosition(strikerRef.current.body, { x: clampedX, y: STRIKER_LINE_Y });
+      setIsDragging(true);
+      setDragStart({ x: clampedX, y: STRIKER_LINE_Y });
     }
   }, [canShoot, isAnimating, isAITurn]);
 
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDragging || !strikerRef.current) return;
+    if (!isDragging || !dragStart) return;
 
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
@@ -278,29 +311,35 @@ const GameBoard: React.FC<GameBoardProps> = ({
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
 
-    const striker = strikerRef.current.body.position;
-
-    // Calculate aim angle
-    const dx = mouseX - striker.x;
-    const dy = mouseY - striker.y;
+    // Calculate aim angle from drag start point
+    const dx = mouseX - dragStart.x;
+    const dy = mouseY - dragStart.y;
     const angle = Math.atan2(dy, dx);
     setAimAngle(angle);
 
-    // Calculate power
+    // Calculate power based on drag distance
     const distance = Math.sqrt(dx * dx + dy * dy);
     const newPower = Math.min(Math.max(distance / 2, 20), 100);
     setPower(newPower);
-  }, [isDragging]);
+  }, [isDragging, dragStart]);
 
   const handlePointerUp = useCallback(() => {
-    if (!isDragging || !canShoot || !strikerRef.current) return;
+    if (!isDragging || !canShoot || !strikerRef.current) {
+      setIsDragging(false);
+      setDragStart(null);
+      setPower(0);
+      return;
+    }
 
     setIsDragging(false);
+    setDragStart(null);
 
     if (power > 10) {
       applyStrikerForce(strikerRef.current.body, aimAngle, power);
       setIsAnimating(true);
       setCanShoot(false);
+      setPower(0);
+    } else {
       setPower(0);
     }
   }, [isDragging, canShoot, power, aimAngle]);
